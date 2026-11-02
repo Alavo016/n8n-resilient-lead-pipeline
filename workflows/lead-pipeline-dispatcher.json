@@ -1,0 +1,559 @@
+{
+  "name": "Lead Pipeline — Dispatcher (hardened demo)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-pipeline-dispatcher",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "e54ca7dd-a36c-44f4-aeec-66ab61552476",
+      "name": "🎣 Webhook - Receive Apify Callback",
+      "webhookId": "baa6e99d-ecb6-46a0-9e78-2a8be863de47",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "WEBHOOK_SECRET"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "45047ce9-6b81-4ca5-985b-17a7d8060530",
+              "name": "BACKEND_URL",
+              "value": "https://your-backend.example.com",
+              "type": "string"
+            },
+            {
+              "id": "1e2534f6-b636-45ae-a98f-e4587dcb1532",
+              "name": "WORKER_URL",
+              "value": "https://your-n8n.example.com/webhook/lead-pipeline-worker",
+              "type": "string"
+            },
+            {
+              "id": "ca40b935-17ce-449a-a041-56451962aadf",
+              "name": "TELEGRAM_CHAT_ID",
+              "value": "YOUR_CHAT_ID",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "id": "efb808d6-85e4-4e74-b2e2-82820ddcfd76",
+      "name": "⚙️ Set - Config"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Reject malformed callbacks early, with a message that says what is missing.\nconst input = $input.first().json;\nconst body = input.body ?? {};\nconst query = input.query ?? {};\n\nconst eventType = body.eventType;\nconst apifyRunId = body.resource?.id ?? body.eventData?.actorRunId;\nconst datasetId = body.resource?.defaultDatasetId;\nconst runId = query.runId;\n\nconst missing = [];\nif (!eventType) missing.push('eventType');\nif (!apifyRunId) missing.push('resource.id');\nif (!runId) missing.push('query.runId');\nif (eventType === 'ACTOR.RUN.SUCCEEDED' && !datasetId) missing.push('resource.defaultDatasetId');\n\nif (missing.length) {\n  // Thrown errors stop the run and reach the global error workflow.\n  throw new Error(`Invalid Apify callback, missing: ${missing.join(', ')}`);\n}\n\nreturn [{\n  json: {\n    eventType,\n    apifyRunId,\n    datasetId,\n    runId,\n    statusMessage: body.resource?.statusMessage ?? null,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "id": "35ab8384-316b-4d9e-93fa-61120464a6e0",
+      "name": "✅ Code - Validate Payload"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Apify can deliver the same webhook more than once.\n// Skip a run that was already dispatched so the worker never processes it twice.\n// Static data persists for production (active) executions only;\n// at higher volume, replace this with a UNIQUE key in Postgres.\nconst store = $getWorkflowStaticData('global');\nstore.seenRuns = store.seenRuns ?? [];\n\nconst payload = $input.first().json;\nif (store.seenRuns.includes(payload.apifyRunId)) {\n  return [];\n}\n\nstore.seenRuns.push(payload.apifyRunId);\nstore.seenRuns = store.seenRuns.slice(-500);\nreturn [{ json: payload }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "id": "aa58d9a9-8835-46a7-89a8-e8e333495e88",
+      "name": "🔁 Code - Skip Duplicate Callback"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "30636e65-2ce5-4e9d-b500-534d0a2426a9",
+              "leftValue": "={{ $json.eventType }}",
+              "rightValue": "ACTOR.RUN.SUCCEEDED",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        880,
+        0
+      ],
+      "id": "5300e118-672f-488e-8bee-f22135eed984",
+      "name": "❓ IF - Run Succeeded"
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "url": "=https://api.apify.com/v2/datasets/{{ $json.datasetId }}/items?format=json&clean=true",
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1120,
+        -140
+      ],
+      "id": "53ca4413-76ac-46c5-958e-b5422ffa4fec",
+      "name": "📦 HTTP - Get Dataset Items",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "",
+          "name": "APIFY_TOKEN"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "const { runId } = $('✅ Code - Validate Payload').first().json;\nconst BATCH_SIZE = 50;\n\nconst resolveLocation = (loc) => {\n  if (!loc) return '';\n  if (typeof loc === 'string') return loc;\n  return loc.linkedinText || loc?.parsed?.text || '';\n};\n\n// Full response = exactly one item on success, even for an empty dataset,\n// and no item at all on this branch when the request fails.\nconst response = $input.first()?.json ?? {};\nconst rawItems = Array.isArray(response.body) ? response.body : [];\n\nconst cleaned = rawItems\n  .filter((p) => p?.firstName || p?.linkedinUrl)\n  .map((p) => {\n    const currentExp = (p.experience || []).find((e) => e.endDate?.text === 'Present')\n      || (p.experience || [])[0] || {};\n    const currentPos = (p.currentPosition || []).find((x) => x.dateRange?.end === null)\n      || (p.currentPosition || [])[0] || {};\n\n    return {\n      fullName: `${p.firstName || ''} ${p.lastName || ''}`.trim(),\n      firstName: p.firstName || '',\n      lastName: p.lastName || '',\n      currentTitle: currentExp.position || p.headline || '',\n      currentCompany: currentExp.companyName || currentPos.companyName || '',\n      companyLinkedinUrl: currentExp.companyLinkedinUrl || currentPos.companyLinkedinUrl || '',\n      profileLinkedinUrl: p.linkedinUrl || '',\n      linkedinSummary: p.about || p.summary || '',\n      location: resolveLocation(p.location),\n    };\n  })\n  .filter((p) => p.fullName);\n\nconst batches = [];\nfor (let i = 0; i < cleaned.length; i += BATCH_SIZE) {\n  batches.push(cleaned.slice(i, i + BATCH_SIZE));\n}\n\n// Always emit at least one item: an empty dataset must still be reported to the backend.\nif (batches.length === 0) {\n  return [{ json: { runId, profiles: [], profiles_found: 0, batchIndex: 0, batchCount: 0 } }];\n}\n\nreturn batches.map((profiles, batchIndex) => ({\n  json: {\n    runId,\n    profiles,\n    profiles_found: cleaned.length,\n    batchIndex,\n    batchCount: batches.length,\n  },\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        -160
+      ],
+      "id": "87985809-2bfd-426d-b3eb-4e50f0b8bdf4",
+      "name": "🧹 Code - Clean & Split Batches"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "751fe0a1-d05a-4fa9-8f8c-d67afca9735c",
+              "leftValue": "={{ $json.profiles_found }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1580,
+        -160
+      ],
+      "id": "24a09553-6124-4309-bc6c-0e95fe32330c",
+      "name": "❓ IF - Has Profiles"
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "={{ $('⚙️ Set - Config').first().json.WORKER_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ runId: $json.runId, batchIndex: $json.batchIndex, batchCount: $json.batchCount, profiles: $json.profiles }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1820,
+        -260
+      ],
+      "id": "b0e636ad-83ad-4632-a624-35165265f4d2",
+      "name": "🚀 HTTP - Trigger Worker",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "WEBHOOK_SECRET"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "={{ $('⚙️ Set - Config').first().json.BACKEND_URL + '/webhook/search-run/' + $('✅ Code - Validate Payload').first().json.runId + '/progress' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ profiles_found: $('🧹 Code - Clean & Split Batches').first().json.profiles_found, batches: $('🧹 Code - Clean & Split Batches').first().json.batchCount }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2080,
+        -160
+      ],
+      "id": "380e8c9a-9a4e-4b78-9f2c-8ec4dae1f851",
+      "name": "📊 HTTP - Report Progress",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "WEBHOOK_SECRET"
+        }
+      },
+      "executeOnce": true,
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "// One summary for every failure path: failed Apify run, dataset fetch, worker trigger, progress report.\nconst validated = $('✅ Code - Validate Payload').first().json;\n\nconst reasons = $input.all().map(({ json }) => {\n  if (typeof json.error === 'string') return json.error;\n  if (json.error?.message) return json.error.message;\n  if (json.eventType && json.eventType !== 'ACTOR.RUN.SUCCEEDED') {\n    return `Apify run ended with ${json.eventType}${json.statusMessage ? `: ${json.statusMessage}` : ''}`;\n  }\n  return 'Unknown error';\n});\n\nreturn [{\n  json: {\n    runId: validated.runId,\n    apifyRunId: validated.apifyRunId,\n    stage: $prevNode.name,\n    reason: [...new Set(reasons)].slice(0, 3).join(' | '),\n    failedItems: reasons.length,\n    executionId: $execution.id,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        280
+      ],
+      "id": "bf2f5d9b-a41e-4dd4-a72d-63684a970349",
+      "name": "🧯 Code - Format Failure"
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "={{ $('⚙️ Set - Config').first().json.BACKEND_URL + '/webhook/search-run/' + $json.runId + '/failed' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ stage: $json.stage, reason: $json.reason, executionId: $json.executionId }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1580,
+        280
+      ],
+      "id": "02464609-7995-4be3-8fde-6c7472bb7090",
+      "name": "⚠️ HTTP - Report Run Failed",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "WEBHOOK_SECRET"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('⚙️ Set - Config').first().json.TELEGRAM_CHAT_ID }}",
+        "text": "=⚠️ Lead pipeline — dispatcher failed\nRun: {{ $('🧯 Code - Format Failure').first().json.runId }}\nStage: {{ $('🧯 Code - Format Failure').first().json.stage }}\nReason: {{ $('🧯 Code - Format Failure').first().json.reason }}\nExecution: {{ $('🧯 Code - Format Failure').first().json.executionId }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1820,
+        280
+      ],
+      "id": "b1dde6d3-c4e8-4ddc-a375-6f6b78f624d5",
+      "name": "📣 Telegram - Alert Ops",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram Ops Bot"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "content": "## Lead Pipeline — Dispatcher (hardened)\nReceives the Apify callback, validates it, fetches the dataset and dispatches batches of 50 profiles to the worker.\n\n**Reliability**\n- Header auth on the webhook (shared secret)\n- Payload validation with explicit errors\n- Duplicate callbacks skipped (idempotent dispatch)\n- Retry on fail (3 tries, 5 s) on every external call\n- Error outputs routed to one failure lane\n- Global error workflow for anything thrown\n\n**Naming:** emoji + node type + verb + object",
+        "height": 380,
+        "width": 620,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -460
+      ],
+      "id": "29165a49-2d22-485b-b231-fb2143825ca3",
+      "name": "Sticky - Overview"
+    },
+    {
+      "parameters": {
+        "content": "## Failure lane\nEvery error output lands here: the backend marks the run as failed, then ops get a Telegram alert with the run and execution IDs.\nThe backend report never blocks the alert (On Error: continue).",
+        "height": 260,
+        "width": 720,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        200
+      ],
+      "id": "280265cf-6164-4c98-9bc7-da7da1927d3b",
+      "name": "Sticky - Failure lane"
+    },
+    {
+      "parameters": {
+        "content": "## Setup after import\n1. Fill the values in ⚙️ Set - Config\n2. Credentials: APIFY_TOKEN (query auth), WEBHOOK_SECRET (header auth), Telegram\n3. Workflow settings → Error workflow → WF-ERR — Global Error Alert\n4. Launcher: send the WEBHOOK_SECRET header to Apify via headersTemplate",
+        "height": 240,
+        "width": 560,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        660,
+        260
+      ],
+      "id": "f2093321-0718-432f-8c80-487b3786a33a",
+      "name": "Sticky - Setup"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🎣 Webhook - Receive Apify Callback": {
+      "main": [
+        [
+          {
+            "node": "⚙️ Set - Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ Set - Config": {
+      "main": [
+        [
+          {
+            "node": "✅ Code - Validate Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✅ Code - Validate Payload": {
+      "main": [
+        [
+          {
+            "node": "🔁 Code - Skip Duplicate Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔁 Code - Skip Duplicate Callback": {
+      "main": [
+        [
+          {
+            "node": "❓ IF - Run Succeeded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ IF - Run Succeeded": {
+      "main": [
+        [
+          {
+            "node": "📦 HTTP - Get Dataset Items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🧯 Code - Format Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📦 HTTP - Get Dataset Items": {
+      "main": [
+        [
+          {
+            "node": "🧹 Code - Clean & Split Batches",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🧯 Code - Format Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧹 Code - Clean & Split Batches": {
+      "main": [
+        [
+          {
+            "node": "❓ IF - Has Profiles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ IF - Has Profiles": {
+      "main": [
+        [
+          {
+            "node": "🚀 HTTP - Trigger Worker",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "📊 HTTP - Report Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🚀 HTTP - Trigger Worker": {
+      "main": [
+        [
+          {
+            "node": "📊 HTTP - Report Progress",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🧯 Code - Format Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 HTTP - Report Progress": {
+      "main": [
+        [],
+        [
+          {
+            "node": "🧯 Code - Format Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧯 Code - Format Failure": {
+      "main": [
+        [
+          {
+            "node": "⚠️ HTTP - Report Run Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚠️ HTTP - Report Run Failed": {
+      "main": [
+        [
+          {
+            "node": "📣 Telegram - Alert Ops",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  },
+  "tags": []
+}

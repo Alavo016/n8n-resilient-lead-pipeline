@@ -1,0 +1,75 @@
+{
+  "name": "Demo Stub — Fake Worker & Backend",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "demo-worker",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c0ee7104-0469-4468-b3eb-d4961cd1f6a3",
+      "name": "🎣 Webhook - Fake Worker",
+      "webhookId": "d4dcb412-7f0e-4bff-91a4-58a385a4e40f",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "WEBHOOK_SECRET"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "demo-backend/webhook/search-run/:runId/:event",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        220
+      ],
+      "id": "a0060570-d07f-416d-8a03-343b7c245163",
+      "name": "🎣 Webhook - Fake Backend",
+      "webhookId": "d0bc65fd-1533-4138-af1d-912c8c856b9f",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "WEBHOOK_SECRET"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Demo stub\nStands in for the worker and the backend so the Dispatcher can be tested end to end.\nBoth webhooks answer 200 at once; open Executions to see what they received.\n\nIn ⚙️ Set - Config of the Dispatcher:\n- WORKER_URL = the Production URL of Fake Worker\n- BACKEND_URL = the Production URL of Fake Backend, cut before /webhook/search-run\n  (n8n adds the webhook ID to paths with parameters)",
+        "height": 260,
+        "width": 560,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        300,
+        -40
+      ],
+      "id": "f4af037b-cccd-4e13-810f-14e34eaf9b27",
+      "name": "Sticky - Demo stub"
+    }
+  ],
+  "pinData": {},
+  "connections": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all"
+  },
+  "tags": []
+}

@@ -1,0 +1,101 @@
+{
+  "name": "WF-ERR — Global Error Alert",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "0eff2da6-4074-424f-8216-a07a79cfd087",
+      "name": "🧨 Error Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Called by n8n whenever a workflow that uses this error workflow throws.\nconst { execution = {}, workflow = {} } = $input.first().json;\nconst message = execution.error?.message ?? 'No error message';\n\nreturn [{\n  json: {\n    text: [\n      '🚨 Workflow failed',\n      `Workflow: ${workflow.name ?? 'unknown'}`,\n      `Last node: ${execution.lastNodeExecuted ?? 'unknown'}`,\n      `Error: ${message.slice(0, 500)}`,\n      `Mode: ${execution.mode ?? 'unknown'}`,\n      execution.url ? `Open: ${execution.url}` : `Execution: ${execution.id ?? 'unknown'}`,\n    ].join('\\n'),\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "id": "be28e755-d0f7-4d47-b23e-07be51118bf9",
+      "name": "🧾 Code - Format Alert"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_CHAT_ID",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        480,
+        0
+      ],
+      "id": "fd9254fb-4253-4453-b50d-c070b1e4f9b3",
+      "name": "📣 Telegram - Alert Ops",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram Ops Bot"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "content": "## Global error workflow\nSet it in each workflow's settings (Error workflow).\nCatches anything thrown — invalid payload, code errors, failures that exhaust their retries — and alerts ops on Telegram with a link to the execution.",
+        "height": 220,
+        "width": 620,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -260
+      ],
+      "id": "5fe0bc19-77f6-4f51-a44b-77f41c3ce9a9",
+      "name": "Sticky - Error workflow"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🧨 Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "🧾 Code - Format Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧾 Code - Format Alert": {
+      "main": [
+        [
+          {
+            "node": "📣 Telegram - Alert Ops",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
